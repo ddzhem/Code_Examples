@@ -1,0 +1,121 @@
+import oracles
+from scipy.special import expit
+from time import time
+
+
+class GDClassifier:
+    def __init__(self, loss_function, step_alpha=1, step_beta=0, 
+                 tolerance=1e-5, max_iter=1000, **kwargs):
+        self.loss = loss_function
+        self.w = None
+        self.alpha = step_alpha
+        self.beta = step_beta
+        self.tol = tolerance
+        self.iter = max_iter
+        self.kwargs = **kwargs
+        if self.loss == 'binary_logistic':
+            self.cl = oracles.BinaryLogistic(self.kwargs)
+        else:
+            self.cl = oracles.MultiClassLogistic(self.kwargs)
+        
+    def fit(self, X, y, w_0=None, trace=False):
+        l = X.shape[0]
+        d = X.shape[1]
+        if self.w0 is None:
+            self.w0 = np.zeros(l)
+        self.w = w0
+        self.history = {'time': [0.], 'func': [self.get_objective(X, y)]}
+        it = 0
+        currenttime = 0.
+        while it == 0 or (
+		        it < self.max_iter and
+                abs(self.history['func'][it] - self.history['func'][it - 1]) >= self.tolerance):
+            tmptime = time()
+            it += 1
+            self.w = self.w - self.alpha / (it + 1) ** self.beta * self.get_gradient(X, y)
+            currenttime = time() - tmptime
+            self.history['time'].append(currenttime)
+            self.history['func'].append(self.get_objective(X, y))
+        if trace is True:
+            return self.history
+        
+    def predict(self, X):
+        probs = self.predict_proba(X)
+        res = probs.argmax(axis=1)
+        if self.loss == 'binary_logistic':
+            res[res == 0] = -1
+        else:
+            res += 1
+        return res
+        
+    def predict_proba(self, X):
+        if self.loss == 'binary_logistic':
+            res = expit(np.dot(X, self.w)).reshape((X.shape[0], 1))
+            return np.hstack((1 - res, res))
+        else:
+            res = X.dot(self.w.T)
+            exps = np.exp(res - np.max(res, axis=1)[np.newaxis].T)
+            return exps / np.sum(exps, axis=1)[np.newaxis].T   
+        
+    def get_objective(self, X, y):
+        return self.cl.func(X, y, self.w)
+        
+    def get_gradient(self, X, y):
+        return self.cl.grad(X, y, self.w)
+    
+    def get_weights(self):
+        return self.w   
+     
+     
+class SGDClassifier(GDClassifier):
+    def __init__(self, loss_function, batch_size=1, step_alpha=1, step_beta=0, 
+                 tolerance=1e-5, max_iter=1000, random_seed=153, **kwargs):
+        self.loss = loss_function
+        self.w = None
+        self.alpha = step_alpha
+        self.beta = step_beta
+        self.tol = tolerance
+        self.seed = random_seed
+        self.bsize = batch_size
+        self.iter = max_iter
+        self.kwargs = **kwargs
+        if self.loss == 'binary_logistic':
+            self.cl = oracles.BinaryLogistic(self.kwargs)
+        else:
+            self.cl = oracles.MultiClassLogistic(self.kwargs)
+        
+    def fit(self, X, y, w_0=None, trace=False, log_freq=1):
+        l = X.shape[0]
+        d = X.shape[1]
+        if w_0 is None:
+            w_0 = np.zeros(l)
+        prev_w = np.zeros(l)
+        self.w = w_0
+        self.history = {'time': [0.], 'func': [self.get_objective(X, y)]}
+        self.history['epoch_num'] = [0.]
+        self.history['weights_diff'] = [0.]
+        it = 0
+        old_epoch = 0.
+        epoch = 0.
+        currenttime = 0.
+        tmptime = time()
+        while it < self.max_iter:
+            it += 1
+            inds = np.random.permutation(l)[:self.bsize]
+            used[inds] = 1.
+            epoch += self.bsize / l
+            prev_w = np.copy(self.w)            
+            self.w = self.w - self.alpha / (it + 1) ** self.beta * self.get_gradient(X[inds], y)
+            if epoch - old_epoch > log_freq:
+                curfunc = self.get_objective(X, y)
+                currenttime = time() - tmptime
+                self.history['time'].append(currenttime)
+                self.history['func'].append(curfunc)
+                self.history['epoch_num'] = epoch
+                old_epoch = epoch
+                self.history['weights_diff'] = np.linalg.norm(self.w - prev_w, axis=1)
+                tmptime = time()
+                if abs(curfunc - history['func'][len(history['func']) - 2]) < self.tolerance:
+                    break
+        if trace is True:
+            return self.history
