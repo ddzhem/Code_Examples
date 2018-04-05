@@ -1,0 +1,45 @@
+from time import time
+import numpy as np
+
+class PEGASOSMethod:
+
+    def __init__(self, step_lambda=1, batch_size=1, num_iter=1000, c=1):
+        self.lbd = step_lambda
+        self.bsize = batch_size
+        self.iters = num_iter
+        self.c = c
+        self.w = None
+    
+    def get_objective(self, X, y):
+        return self.func(X, y)
+    
+    def func(self, X, y):
+        ksi = np.maximum(np.zeros(len(y)), 1 - y * (X.dot(self.w)))
+        return self.w.dot(self.w) / 2. + self.c * np.mean(ksi)
+     
+    def fit(self, X, y, trace=False):
+        self.w = np.zeros(X.shape[1])
+        self.best_func = self.func(X, y)
+        self.history = {}
+        if trace is True:
+            self.history['time'] = [0.]
+            self.history['func'] = [self.best_func]
+            t = time()
+        for i in range(1, self.iters + 1):
+            batch = np.random.random_integers(low=X.shape[0] - 1, size=self.bsize)
+            a = (i * self.lbd) ** (-1)
+            tmpX = X[batch]
+            tmpy = y[batch]
+            tmpX = tmpX[tmpy * tmpX.dot(self.w) < 1]
+            tmpy = tmpy[tmpy * tmpX.dot(self.w) < 1]
+            self.w = (1 - a * self.lbd) * self.w + a / self.bsize * np.sum(tmpX * (tmpy.reshape((-1, 1))))
+            self.w /= max(1., ((self.lbd) ** (0.5) * (np.linalg.norm(self.w))) ** (-1))
+            self.best_func = min(self.best_func, self.func(X, y))
+            if trace is True:
+                self.history['time'].append(time() - t)
+                t = time()
+                self.history['func'].append(self.best_func)
+        if trace is True:
+            return self.history
+    def predict(self, X):
+        return np.sign(X.dot(self.w))
